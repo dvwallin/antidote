@@ -1,0 +1,763 @@
+#!/usr/bin/env php
+<?php
+
+/*
+ * Is the client using a terminal? Otherwise exit
+*/
+    if ( PHP_SAPI !== 'cli' )
+    {
+        error_log ( 'Antidote ERROR : Not Running from CLI', 3, __DIR__ . '/logs/error.log' );
+        echo ( 'Not Running from CLI' );
+        exit ( 1 );
+    }
+
+/*
+ * Check for PHP > 5.4
+*/
+    if ( version_compare ( phpversion ( ) , '5.4' ) < 1 )
+    {
+        error_log ( 'Antidote ERROR : Antidote requires verion 5.4 or higher of PHP. ' . phpversion ( ) . ' is not enough', 3, __DIR__ . '/logs/error.log' );
+        echo ( PHP_EOL . 'Need version 5.5 or higher of PHP. You are using version ' . phpversion ( ) . '. Please update to run Antidote.' . PHP_EOL );
+        exit ( 1 );
+    }
+
+/*
+ * Require configuration parameters for generic settings
+*/
+    if ( !is_file ( __DIR__ . '/config/settings.inc.php' ) )
+    {
+        error_log ( 'Antidote ERROR : Could not find ' . __DIR__ . '/config/configuration.php', 3, __DIR__ . '/logs/error.log' );
+        echo ( 'Could not find ' . __DIR__ . '/config/settings.inc.php' );
+        exit ( 1 );
+    }
+    require_once __DIR__ . '/config/settings.inc.php';
+
+/*
+ * Declare cli process title
+*/
+    if ( !function_exists( 'cli_set_process_title' ) || !cli_set_process_title ( 'antidote' ) )
+    {
+        $string_failure_message = 'Could not set a custom antidote process title';
+        if ( version_compare ( phpversion ( ) , '5.4' ) < 1 )
+        {
+            $string_failure_message .= ' (need PHP v5.5+)';
+        }
+        elog ( $string_failure_message );
+    }
+
+/*
+ * Define SCRIPT_NAME as a global constant
+*/
+    if ( !define ( 'SCRIPT_NAME', str_replace ( APP_PATH, '', __FILE__ ) ) )
+    {
+        elog ( 'Could not define SCRIPT_NAME.' );
+    }
+
+/*
+ * Include the antidote core and initiate it
+*/
+    if ( !is_file( CORE_PATH . 'antidote_core.php' ) )
+    {
+        elog ( 'Could not locate ' . CORE_PATH . 'antidote_core.php' );
+        exit ( 1 );
+    }
+    require_once CORE_PATH . 'antidote_core.php';
+    $class_antidote = New Antidote ( );
+    $array_arguments = $class_antidote->initialize ( $argv );
+    if ( !array_key_exists ( 'preset', $array_arguments ) )
+    {
+        $class_antidote->initialize_db ( );
+    }
+
+/*
+ * If presets-file is not there, warn the user and exit
+*/
+    if ( !is_file ( CONFIG_PATH . PRESETS_FILE_NAME ) )
+    {
+        elog ( 'Could not find ' . CONFIG_PATH . PRESETS_FILE_NAME );
+        $class_antidote->show_msg ( [ 'string_msg' => 'Could not find ' . CONFIG_PATH . PRESETS_FILE_NAME ] );
+        exit ( 1 );
+    }
+
+/*
+ * Include the antidote tools extension and initiate it
+*/
+    require_once CORE_PATH . 'antidote_tools.php';
+    $class_tools = New Tools ( );
+
+/*
+ * Include the cli libraries and initiate it IF there is no --nocolour argument passed along
+*/
+    if ( in_array ( '--help', $argv ) )
+    {
+        if ( !require_once CORE_PATH . 'cli/cli.php' )
+        {
+            elog ( 'Could not require_once' . CORE_PATH . 'cli/cli.php' );
+        }
+        \cli\register_autoload ( );
+    } elseif ( !in_array ( '--help', $argv ) && !in_array ( '--nocolour', $argv ) && $class_tools->check_preset_for_arg ( [ 'string_argument' => 'nocolour', 'array_arguments' => $array_arguments ] ) !== TRUE )
+    {
+        if ( !require_once CORE_PATH . 'cli/cli.php' )
+        {
+            elog ( 'Could not require_once' . CORE_PATH . 'cli/cli.php' );
+        }
+        \cli\register_autoload ( );
+    }
+
+/*
+ * Include the filter core and initiate it
+*/
+    if ( !require_once CORE_PATH . 'layout_core.php' )
+    {
+        elog ( 'Could not require_once' . CORE_PATH . 'layout_core.php' );
+    }
+    $class_layout = New Layout ( );
+
+/*
+ * Include the migration class and initiate it
+*/
+    if ( !require_once CORE_PATH . 'antidote_migration.php' )
+    {
+        elog ( 'Could not require_once' . CORE_PATH . 'antidote_migration.php' );
+    }
+
+/*
+ * Include the communication core and initiate it
+*/
+    if ( !require_once CORE_PATH . 'communicate_core.php' )
+    {
+        elog ( 'Could not require_once' . CORE_PATH . 'communicate_core.php' );
+    }
+    $class_communicate = New Communicate ( );
+
+/*
+ * If --nodecode used, set the flag in
+ * the class so that the utf8_decode function
+ * isn't used for each query
+*/
+    if ( array_key_exists ( 'nodecode', $array_arguments ) || $class_tools->check_preset_for_arg ( [ 'string_argument' => 'nodecode', 'array_arguments' => $array_arguments ] ) === TRUE )
+    {
+        $class_antidote->set_no_decode ( TRUE );
+    }
+
+/*
+ * If --noheader is used, dont print
+ * the visible header of antidote
+*/
+    if ( !array_key_exists ( 'noheader', $array_arguments ) && $class_tools->check_preset_for_arg ( [ 'string_argument' => 'noheader', 'array_arguments' => $array_arguments ] ) !== TRUE )
+    {
+        echo $class_layout->header ( $argv );
+    }
+
+/*
+ * Help function looping through allowed arguments
+ * formatting it into a readable list for the user
+*/
+    function help ( $array_arguments, $class_antidote )
+    {
+        $string_description = '';
+        $array_header = array (
+            'Arguments',
+            'Description',
+            'REQUIRED'
+        );
+        $array_allowed_arguments = $class_antidote->return_raw_allowed_arguments ( );
+        $array_required_arguments = $class_antidote->return_required_arguments ( );
+        foreach ( $array_allowed_arguments as $key => $value )
+        {
+            if ( in_array ( $value [ 0 ] , $array_required_arguments ) )
+            {
+                $array_allowed_arguments [ $key ] = array (
+                    $value [ 0 ] ,
+                    $value [ 1 ] ,
+                    'Yes'
+                );
+            } else
+            {
+                $array_allowed_arguments [ $key ] = array (
+                    $value [ 0 ] ,
+                    $value [ 1 ] ,
+                    'No'
+                );
+            }
+        }
+        $class_branch = new \cli\Table ( );
+        $class_branch->setHeaders ( $array_header );
+        $class_branch->setRows ( $array_allowed_arguments );
+        $class_branch->display ( );
+        $example_headers = array (
+            'Command',
+            'Description'
+        );
+        $example_array = array (
+            array (
+                SCRIPT_NAME . ' --database=MyDB --branch=MyTable --list',
+                'List the revisions for the branch MyTable inside the database MyDB'
+            ) ,
+            array (
+                SCRIPT_NAME . ' --database=MyDB --branch=! --list',
+                'List all the revisions for all branches inside the database MyDB'
+            ) ,
+            array (
+                SCRIPT_NAME . ' --database=MyDB --branch=MyTable --create',
+                'Creates an empty revision for the branch MyTable inside the database MyDB'
+            ) ,
+            array (
+                SCRIPT_NAME . ' --database=MyDB --branch=! --chain=reset,goto:!,list',
+                'Chain commands to run through'
+            ) ,
+        );
+        $class_example_branch = new \cli\Table ( );
+        $class_example_branch->setHeaders ( $example_headers );
+        $class_example_branch->setRows ( $example_array );
+        $class_example_branch->display ( );
+        return $string_description;
+    }
+
+/*
+ * About function prints a helping text about the project
+*/
+    function about ( $array_arguments, $class_antidote )
+    {
+        $string_description = 'Antidote is a revisioning system for PostgreSQL, MySQL, MariaDB and Percona. It\'s purpose is to handle revisions per branch per database.' . PHP_EOL;
+        $string_description.= 'It has been released under the GPLv3 license which can be found here: http://www.gnu.org/licenses/gpl-3.0.html' . PHP_EOL;
+        $string_description.= 'The original author of Antidote is David V. Wallin ( david@dwall.in ) .' . PHP_EOL . PHP_EOL;
+        $string_description.= 'Please note that neither the developers of this software, nor any company or organisation related to the developers of this software,' . PHP_EOL;
+        $string_description.= 'take any responsibility for the usage, or result of usage, of this software ( or related code or materials ) .';
+        return $string_description;
+    }
+
+/*
+ * Function for jumping to a certain revision.
+ * This is used both for going up and down
+*/
+    function go_to ( $array_arguments, $class_antidote )
+    {
+        $class_branch = $array_arguments [ 'branch' ];
+        if ( $array_arguments [ 'branch' ] === '!' || $array_arguments [ 'branch' ] === NULL )
+        {
+            return elog ( 'The branch you\'ve entered does not seem to be a valid branch name.' );
+            exit ( 1 );
+        }
+        if ( ( !ctype_digit ( $array_arguments [ 'goto' ] ) || $array_arguments [ 'goto' ] < 1 ) && $array_arguments [ 'goto' ] != '!' )
+        {
+            return elog ( 'The revision id must be an integer and greater than 0. If you wish to undo all revisions of a branch please use --reset instead.' );
+            exit ( 1 );
+        }
+        if ( $array_arguments [ 'goto' ] === '!' )
+        {
+            $array_arguments [ 'goto' ] = $class_antidote->get_highest_revision_number ( [ 'string_branch_name' => $class_branch ] ) - 1;
+        }
+        if ( $class_antidote->check_for_requested_revision ( [ 'string_branch' => $class_branch, 'int_revision_id' => $array_arguments [ 'goto' ] ] ) != FALSE )
+        {
+            $steps_to_take = $class_antidote->return_revisions_between ( [ 'string_branch' => $class_branch, 'int_requested_revision' => $array_arguments [ 'goto' ] ] );
+            $step_type = $class_antidote->return_step_type ( [ 'string_branch' => $class_branch, 'int_requested_revision' => $array_arguments [ 'goto' ] ] );
+            if ( $steps_to_take == FALSE )
+            {
+                return elog ( 'You are already at this revision.' );
+                exit ( 1 );
+            }
+            if ( count ( $steps_to_take ) !== 0 )
+            {
+                $string_description = '';
+                switch ( $step_type )
+                {
+                    case 'apply':
+                        asort ( $steps_to_take );
+                        break;
+                    default:
+                        arsort ( $steps_to_take );
+                        break;
+                }
+                foreach ( $steps_to_take as $step )
+                {
+                    require_once ( REV_PATH . $class_branch . DS . $step . '_' . $class_branch . REV_SUFFIX );
+                    $class_name = 'Migration_' . $class_branch . '_' . $step;
+                    $revision_to_apply = New $class_name ( $class_antidote->object_dbs );
+                    $queries_to_execute = $revision_to_apply->$step_type ( );
+                    if ( $queries_to_execute === NULL )
+                    {
+                        $string_description.= 'Could not find a proper undo-function in ' . REV_PATH . REV_PREFIX . $step . REV_SUFFIX . '. This is probably an --init -based migration.';
+                        return elog ( $string_description );
+                        exit ( 1 );
+                    }
+                    if ( $class_antidote->execute_queries ( [ 'array_queries_to_execute' => $queries_to_execute ] ) === FALSE )
+                    {
+                        $string_description.= 'Could not execute the query.';
+                        return elog ( $string_description );
+                        exit ( 1 );
+                    }
+                    if ( method_exists ( $revision_to_apply, 'post_hook_' . $step_type ) )
+                    {
+                        $hook_name = 'post_hook_' . $step_type;
+                        $revision_to_apply->$hook_name ( );
+                    }
+
+                    $class_antidote->execute_queries ( [ 'array_queries_to_execute' => array (
+                        'DELETE FROM __dote WHERE branch=\'' . $class_branch . '\''
+                    ) ] );
+                    if ( file_exists ( REV_PATH . $class_branch . DS . '.rev_lock.dote' ) )
+                    {
+                        unlink ( REV_PATH . $class_branch . DS . '.rev_lock.dote' );
+                    }
+                    $revision_to_save = $step;
+                    if ( $step_type === 'undo' )
+                    {
+                        $revision_to_save = $revision_to_save - 1;
+                    }
+                    if ( $class_antidote->execute_queries ( [ 'array_queries_to_execute' => array (
+                        'INSERT INTO __dote ( branch, rev_id ) VALUES ( \'' . $class_branch . '\', ' . $revision_to_save . ' ) '
+                    ) ] ) )
+                    {
+                        $string_description.= 'Successfully went to revision ' . $revision_to_save . ' in branch ' . $class_branch . PHP_EOL;
+                    } else
+                    {
+                        $string_description.= 'Could not successfully go to revision ' . $revision_to_save . ' in branch ' . $class_branch . PHP_EOL;
+                    }
+                }
+                return elog ( $string_description );
+            }
+        }
+    }
+
+/*
+ * Reset function. Used to 'clear' the revision set
+*/
+    function re_set ( $array_arguments, $class_antidote )
+    {
+        $class_branch = $array_arguments [ 'branch' ];
+        if ( $array_arguments [ 'branch' ] === '!' || $array_arguments [ 'branch' ] === NULL ) // Removed  || $array_arguments [ 'branch' ] === 'generic' from if-statement
+        {
+            return elog ( 'The branch you\'ve entered does not seem to be a vaild branch name.' );
+            exit ( 1 );
+        }
+        if ( array_key_exists ( 'reset', $array_arguments ) && $array_arguments [ 'reset' ] !== NULL )
+        {
+            return elog ( 'Please do not supply any arguments for --reset.' );
+            exit ( 1 );
+        }
+        $steps_to_take = $class_antidote->return_reset_revisions ( [ 'string_branch_name' => $class_branch ] );
+        $step_type = 'undo';
+        if ( $steps_to_take === FALSE )
+        {
+            return elog ( 'You are already at this revision.' );
+            exit ( 0 );
+        }
+        if ( count ( $steps_to_take ) !== 0 )
+        {
+            $string_description = '';
+            foreach ( $steps_to_take as $step )
+            {
+                require_once ( REV_PATH . $class_branch . DS . $step . '_' . $class_branch . REV_SUFFIX );
+                $class_name = 'Migration_' . $class_branch . '_' . $step;
+                $revision_to_apply = New $class_name ( $class_antidote->object_dbs );
+                $queries_to_execute = $revision_to_apply->$step_type ( );
+                if ( $queries_to_execute === NULL )
+                {
+                    $string_description.= 'Could not find a proper undo-function in ' . REV_PATH . REV_PREFIX . $step . REV_SUFFIX . '. This is probably a --init -based migration.';
+                    return elog ( $string_description );
+                    exit ( 1 );
+                }
+                if ( $class_antidote->execute_queries ( [ 'array_queries_to_execute' => $queries_to_execute ] ) === FALSE )
+                {
+                    $string_description.= 'Could not execute the query.';
+                    return elog ( $string_description );
+                    exit ( 1 );
+                }
+                if ( method_exists ( $revision_to_apply, 'post_hook_undo' ) )
+                {
+                    $revision_to_apply->post_hook_undo ( );
+                    $string_description.= 'Running undo post hook for revision' . PHP_EOL;
+                }
+                if ( file_exists ( REV_PATH . $class_branch . DS . '.rev_lock.dote' ) )
+                {
+                    unlink ( REV_PATH . $class_branch . DS . '.rev_lock.dote' );
+                }
+                $class_antidote->execute_queries ( [ 'array_queries_to_execute' => array (
+                    'DELETE FROM __dote WHERE branch=\'' . $class_branch . '\''
+                ) ] );
+                $string_description.= 'Successfully reset branch ' . $class_branch . ' to pre-applied revision state.' . PHP_EOL;
+            }
+            return elog ( $string_description );
+        }
+    }
+
+/*
+ * If you want to move to a certain revision without applying
+ * it or any revisions on the way
+*/
+    function fastforward ( $array_arguments, $class_antidote )
+    {
+        $class_branch = $array_arguments [ 'branch' ];
+        if ( $array_arguments [ 'branch' ] === '!' )
+        {
+            $class_branch = 'generic';
+        }
+        if ( $class_antidote->check_for_requested_revision ( [ 'string_branch' => $class_branch, 'int_revision_id' => $array_arguments [ 'fastforward' ] ] ) !== FALSE )
+        {
+            if ( $class_antidote->return_current_revision_id ( [ 'string_branch_name' => $class_branch ] ) === $array_arguments [ 'fastforward' ] )
+            {
+                return elog ( 'Tried to fastforward to revision ' . $array_arguments [ 'fastforward' ] . ' in the ' . $class_branch . ' branch. It seems you are already at this revision.' );
+                exit ( 0 );
+            }
+            $class_antidote->execute_queries ( [ 'array_queries_to_execute' => array (
+                'DELETE FROM __dote WHERE branch=\'' . $class_branch . '\''
+            ) ] );
+            if ( file_exists ( REV_PATH . $class_branch . DS . '.rev_lock.dote' ) )
+            {
+                unlink ( REV_PATH . $class_branch . DS . '.rev_lock.dote' );
+            }
+            if ( $class_antidote->execute_queries ( [ 'array_queries_to_execute' => array (
+                'INSERT INTO __dote ( branch, rev_id ) VALUES ( \'' . $class_branch . '\', ' . $array_arguments [ 'fastforward' ] . ' ) '
+            ) ] ) )
+            {
+                return elog ( 'Successfully jumped to revision ' . $array_arguments [ 'fastforward' ] . ' in branch ' . $class_branch );
+                exit ( 0 );
+            } else
+            {
+                return elog ( 'Could not successfully jump to revision ' . $array_arguments [ 'fastforward' ] . ' in branch ' . $class_branch );
+                exit ( 1 );
+            }
+        } else
+        {
+            return elog ( 'Could not successfully jump to revision ' . $array_arguments [ 'fastforward' ] . ' in branch ' . $class_branch );
+            exit ( 1 );
+        }
+    }
+
+/*
+ * Export function to generate a text file, which
+ * is easier to read, containing the queries of the revision
+*/
+    function export ( $array_arguments, $class_antidote )
+    {
+        $single_revision_file = $class_antidote->return_single_revision_file ( [ 'string_branch_name' => $array_arguments [ 'branch' ] , 'int_revision_id' => $array_arguments [ 'export' ] ] );
+        $current_revision = $class_antidote->return_current_revision_id ( [ 'string_branch_name' => $array_arguments [ 'branch' ] ] );
+        $lines = '=====================================' . PHP_EOL . PHP_EOL;
+        $lines.= 'Verbose view of Revision ' . $array_arguments [ 'export' ] . ' ( ' . $array_arguments [ 'branch' ] . ' ) ';
+        if ( $current_revision === $array_arguments [ 'export' ] )
+        {
+            $lines.= ' ( current ) ';
+        }
+        $lines.= PHP_EOL . PHP_EOL;
+        $lines.= '=====================================' . PHP_EOL;
+        if ( $single_revision_file !== FALSE )
+        {
+            $lines.= '  Apply-Queries:' . PHP_EOL;
+            foreach ( $single_revision_file [ 'apply' ] as $apply_queries )
+            {
+                $lines.= '  - ' . $apply_queries . PHP_EOL;
+            }
+            $lines.= PHP_EOL . '  Undo-Queries:' . PHP_EOL;
+            foreach ( $single_revision_file [ 'undo' ] as $undo_queries )
+            {
+                $lines.= '  - ' . $undo_queries . PHP_EOL;
+            }
+            $lines.= PHP_EOL;
+        }
+        if ( $array_arguments [ 'branch' ] === '!' )
+        {
+            $class_antidote->vital_dir_exists ( EXPORT_PATH . 'generic' );
+            $export_name = EXPORT_PATH . 'generic' . DS . $array_arguments [ 'export' ] . '_generic_export.txt';
+        } else
+        {
+            $class_antidote->vital_dir_exists ( EXPORT_PATH . $array_arguments [ 'branch' ] );
+            $export_name = EXPORT_PATH . $array_arguments [ 'branch' ] . DS . $array_arguments [ 'export' ] . '_' . $array_arguments [ 'branch' ] . '_export.txt';
+        }
+        if ( is_file ( $export_name ) )
+        {
+            unlink ( $export_name );
+        }
+        if ( file_put_contents ( $export_name, $lines ) )
+        {
+            return elog ( 'Successfully exported Revision ' . $array_arguments [ 'export' ] . ' into ' . $export_name ) . PHP_EOL;
+            exit ( 0 );
+        } else
+        {
+            return elog ( 'Could not export Revision ' . $array_arguments [ 'export' ] . ' into ' . $export_name ) . PHP_EOL;
+            exit ( 1 );
+        }
+    }
+
+/*
+ * Create a new revision based on a template
+*/
+    function create ( $array_arguments, $class_antidote )
+    {
+        $name_of_revision_created = $class_antidote->create_new_revision_file ( [ 'string_branch_name' => $array_arguments [ 'branch' ] ] );
+        return elog ( $name_of_revision_created . ' was just created.' );
+    }
+
+/*
+ * Used to reset the locks, not revisions
+*/
+    function re_set_locks ( $array_arguments, $class_antidote )
+    {
+        $class_antidote->execute_queries ( [ 'array_queries_to_execute' => array (
+            'DELETE FROM __dote'
+        ) ] );
+        return elog ( 'Reset the locks for that entire database.' );
+    }
+
+
+/*
+ * Run through chains and perform its functions
+*/
+    function chain ( $array_arguments, $class_antidote )
+    {
+        if ( array_key_exists ( DEF_PREFIX . 'notify', get_defined_constants ( TRUE ) [ 'user' ] ) )
+        {
+            $string_chainfile_content = 'Antidote chain started' . PHP_EOL;
+            $string_chainfile_content.= date ( 'l jS \of F Y h:i:s A' ) . PHP_EOL;
+            $string_chainfile_content.= '------------------------------------------' . PHP_EOL;
+            file_put_contents ( LOG_PATH . 'chain_log', $string_chainfile_content );
+        }
+        $func_map = array (
+            'goto' => 'go_to',
+            'list' => 'li_st',
+            'create' => 'create',
+            'export' => 'export',
+            'reset_locks' => 're_set_locks',
+            'reset' => 're_set',
+            'fastforward' => 'fastforward',
+            'apply_deploy' => 'apply_deploy',
+            'list_deploy' => 'list_deploy',
+            'help' => 'help',
+            'preset' => 'preset',
+        );
+        $smg_array = array ( );
+        $chain = explode ( ',', $array_arguments [ 'chain' ] );
+        foreach ( $chain as $act )
+        {
+            $exploded_act = explode ( ':', $act );
+            if ( array_key_exists ( $exploded_act [ 0 ] , $func_map ) )
+            {
+                if ( array_key_exists ( 1, $exploded_act ) )
+                {
+                    $array_arguments [ $exploded_act [ 0 ] ] = $exploded_act [ 1 ];
+                }
+                $smg_array [ ] = $func_map [ $exploded_act [ 0 ] ] ( $array_arguments, $class_antidote );
+            } else
+            {
+                break;
+            }
+        }
+        if ( is_array ( $smg_array ) && count ( $smg_array ) > 0 )
+        {
+            foreach ( $smg_array as $msg )
+            {
+                file_put_contents ( LOG_PATH . 'chain_log', $msg . PHP_EOL, FILE_APPEND );
+                $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+            }
+        }
+        if ( is_file ( LOG_PATH . 'chain_log' ) )
+        {
+            if ( array_key_exists ( DEF_PREFIX . 'notify', get_defined_constants ( TRUE ) [ 'user' ] ) )
+            {
+                global $email_targets;
+                global $class_communicate;
+                foreach ( $email_targets as $target )
+                {
+                    $class_communicate->notify ( [ 'string_message' => file_get_contents ( LOG_PATH . 'chain_log' ) , 'string_target_email' => $target ] );
+                }
+            }
+            unlink ( LOG_PATH . 'chain_log' );
+        }
+    }
+
+/*
+ * Used to run presets from presets-file
+*/
+function preset ( $array_arguments, $class_antidote )
+{
+    $array_preset_ini = parse_ini_file ( CONFIG_PATH . PRESETS_FILE_NAME, TRUE );
+    global $class_tools;
+    if ( !is_array ( $msg = $class_tools->check_for_given_preset ( [ 'preset' => $array_arguments [ 'preset' ] , 'array_preset_ini' => $array_preset_ini ] ) ) )
+    {
+        return $msg;
+        exit ( 1 );
+    } else
+    {
+        $array_selected_preset = $msg;
+        // If the above if statement failed it means the return was not a fail message in form of a string but the actual preset array.
+    }
+
+    $string_array_arguments = $class_tools->preset_array_to_string ( $array_selected_preset );
+    $array_argv = $class_tools->convert_array_to_argv_structure ( [ 'array_selected_preset' => $array_selected_preset ] );
+
+    if ( preg_match ( "/chain/i", $string_array_arguments ) )
+    {
+        $class_antidote->initialize ( $array_argv );
+        $class_antidote->initialize_db ( );
+        $msg = chain ( $array_selected_preset, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+}
+
+/*
+ * Prints the entire list of revisions, per branch, to
+ * the user.
+*/
+function li_st ( $array_arguments, $class_antidote )
+{
+    global $class_layout;
+    $string_description = '';
+    if ( $array_arguments [ 'branch' ] === '!' )
+    {
+        $revisionfiles = $class_antidote->return_revision_files ( [ 'string_branch_name' => NULL ] );
+    } else
+    {
+        $revisionfiles = $class_antidote->return_revision_files ( [ 'string_branch_name' => $array_arguments [ 'branch' ] ] );
+    }
+    $string_description.= $class_layout->return_formatted_content ( [ 'string_msg' => ' List of revisions', 'string_colour' => '%Y' ] ) . PHP_EOL . PHP_EOL;
+    if ( $revisionfiles !== FALSE )
+    {
+        foreach ( $revisionfiles as $revision_branch => $revisionfile )
+        {
+            asort ( $revisionfile );
+            $int_current_revision = $class_antidote->return_current_revision_id ( [ 'string_branch_name' => $revision_branch ] );
+            foreach ( $revisionfile as $int_key => $int_value )
+            {
+                if ( ( int ) $int_value == $int_current_revision )
+                {
+                    $revisionfile [ $int_key ] = $class_layout->return_formatted_content ( [ 'string_msg' => $int_value, 'string_colour' => '%U%G', 'int_mark' => 1 ] );
+                }
+            }
+            if ( strlen ( $revision_branch ) < 7 )
+            {
+                $tab = "\t\t\t\t";
+            } elseif ( strlen ( $revision_branch ) < 14 )
+            {
+                $tab = "\t\t\t";
+            } else
+            {
+                $tab = "\t\t";
+            }
+            $string_description.= ' ' . $revision_branch . $tab . implode ( '  ', $revisionfile ) . PHP_EOL . PHP_EOL;
+        }
+    }
+    return $string_description;
+}
+
+/*
+ * The annoyingly needed last break
+ */
+    echo PHP_EOL;
+
+/*
+ * Calling help function
+*/
+    if ( array_key_exists ( 'help', $array_arguments ) )
+    {
+        $msg = help ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling about function
+*/
+    if ( array_key_exists ( 'about', $array_arguments ) )
+    {
+        $msg = about ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling fastforward function
+*/
+    if ( array_key_exists ( 'fastforward', $array_arguments ) )
+    {
+        $msg = fastforward ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling the goto-function
+*/
+    if ( array_key_exists ( 'goto', $array_arguments ) )
+    {
+        $msg = go_to ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling the reset function
+*/
+    if ( array_key_exists ( 'reset', $array_arguments ) )
+    {
+        $msg = re_set ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling the reset function for locks
+*/
+    if ( array_key_exists ( 'reset_locks', $array_arguments ) )
+    {
+        $msg = re_set_locks ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling export function
+*/
+    if ( array_key_exists ( 'export', $array_arguments ) )
+    {
+        $msg = export ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling create function
+*/
+    if ( array_key_exists ( 'create', $array_arguments ) )
+    {
+        $msg = create ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling list revisions, per branch, function
+*/
+    if ( array_key_exists ( 'list', $array_arguments ) )
+    {
+        $msg = li_st ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Running a preset
+*/
+    if ( array_key_exists ( 'preset', $array_arguments ) )
+    {
+        $msg = preset ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Run through a given chain and check for existing
+ * functions to call and run
+*/
+    if ( array_key_exists ( 'chain', $array_arguments ) )
+    {
+        $msg = chain ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * If --noheader is used, dont print
+ * the visible footer of antidote.
+*/
+    if ( !array_key_exists ( 'noheader', $array_arguments ) && $class_tools->check_preset_for_arg ( [ 'string_argument' => 'noheader', 'array_arguments' => $array_arguments ] ) !== TRUE )
+    {
+        echo $class_layout->footer ( );
+    }
+
+/*
+ * If --bench is used, print execusion time.
+*/
+    if ( array_key_exists ( 'bench', $array_arguments ) || $class_tools->check_preset_for_arg ( [ 'string_argument' => 'bench', 'array_arguments' => $array_arguments ] ) === TRUE )
+    {
+        $time = microtime ( TRUE ) - $_SERVER [ 'REQUEST_TIME_FLOAT' ];
+        echo PHP_EOL . elog ( 'Took ' . $time . ' seconds', 1 )  . PHP_EOL . PHP_EOL;
+    }
