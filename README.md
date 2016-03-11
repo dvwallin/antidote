@@ -60,15 +60,3 @@ The original author of Antidote is David V. Wallin ( david@dwall.in ).
 
 Please note that neither the developers of this software, nor any company or organisation related to the developers of this software,
 take any responsibility for the usage, or result of usage, of this software ( or related code or materials ).
-
-## Screencasts
-
-#### Basics
-> <a href="http://shaun.xbookyq.se:8880/antidote/basics.html">This is a basic screencast</a> just showing how to actually find the help screen and how to list the revisions of all bransches.
-
-#### Exporting
-> <a href="http://shaun.xbookyq.se:8880/antidote/export.html">Revisions can be exported</a> into a more readable state which can then be used for either reviewing revisions or for debugging.
-
-
-
-
