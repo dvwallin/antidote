@@ -150,10 +150,7 @@ class Antidote
             $array_required_arguments = array (
                 '--database',
                 '--branch',
-                '--database_type',
-                '--database_host',
-                '--database_username',
-                '--database_password'
+                '--database_type'
             );
             preg_match ( "/database_type=(.+)/i", implode ( ' ', $argv ), $output_array );
             if ( count ( $output_array ) > 0 )
@@ -485,6 +482,14 @@ class Antidote
             $string_db_type = $this->array_arguments [ 'database_type' ];
             switch ( $string_db_type )
             {
+                case 'sqlite':
+                    $this->execute_queries ( [ 'array_queries_to_execute' => array (
+                        'CREATE TABLE IF NOT EXISTS __dote (
+                                    dote_id INTEGER PRIMARY KEY NOT NULL , 
+                                    branch TEXT NOT NULL ,
+                                    rev_id INTEGER NOT NULL ); '
+                ) ] );
+                break;
                 case 'mysql':
                     $this->execute_queries ( [ 'array_queries_to_execute' => array (
                         'CREATE TABLE IF NOT EXISTS __dote (
@@ -538,9 +543,12 @@ class Antidote
             if ( $this->sql_type ( ) === 'pgsql' )
             {
                 $array_args+= [ 'database' => $this->array_arguments [ 'database' ] , 'database_type' => $this->array_arguments [ 'database_type' ] , 'database_schema' => $this->array_arguments [ 'database_schema' ] , 'database_host' => $this->array_arguments [ 'database_host' ] , 'database_username' => $this->array_arguments [ 'database_username' ] , 'database_password' => $this->array_arguments [ 'database_password' ] , ];
-            } else
+            } elseif ( $this->sql_type ( ) == 'mysql' )
             {
                 $array_args+= [ 'database' => $this->array_arguments [ 'database' ] , 'database_type' => $this->array_arguments [ 'database_type' ] ,  'database_host' => $this->array_arguments [ 'database_host' ] , 'database_username' => $this->array_arguments [ 'database_username' ] , 'database_password' => $this->array_arguments [ 'database_password' ] , ];
+            } elseif ( $this->sql_type ( ) == 'sqlite' )
+            {
+                $array_args+= [ 'database' => $this->array_arguments [ 'database' ] , 'database_type' => $this->array_arguments [ 'database_type' ] , ];
             }
             extract ( $array_args );
             $string_pdo_port = '';
@@ -552,17 +560,22 @@ class Antidote
                 } elseif ( $this->sql_type ( ) === 'mysql' )
                 {
                     $string_pdo_port = 'port=3306; ';
-                } else
-                {
-                    elog ( 'Could not identify the database type. The result is a standard port cannot be set.' );
                 }
             } else
             {
-                $string_pdo_port = 'port=' . $this->array_arguments [ 'database_port' ] . '; ';
+                if ( $this->sql_type ( ) != 'sqlite' )
+                {
+                    $string_pdo_port = 'port=' . $this->array_arguments [ 'database_port' ] . '; ';
+                }
             }
             try
             {
-                $object_dbh = new PDO ( $database_type . ':host=' . $database_host . '; ' . $string_pdo_port . 'dbname=' . $database, $database_username, $database_password );
+                if ( $this->sql_type ( ) == 'sqlite' )
+                {
+                    $object_dbh = new PDO ( 'sqlite://' . $database );
+                } else {
+                    $object_dbh = new PDO ( $database_type . ':host=' . $database_host . '; ' . $string_pdo_port . 'dbname=' . $database, $database_username, $database_password );
+                }
             }
             catch ( Exception $e )
             {
