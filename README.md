@@ -4,6 +4,20 @@
 ## Purpose
 To manage structural changes of one or many data sources (mysql, mariadb, percona or postgresql). This management is done by splitting revisions into different branches, adviced per table, in an incremental pattern.
 
+## Installation
+To "install" antidote all you need to do is install its requirements and then clone it:
+* php-cli (or php5-cli)
+* php-pdo (or php5-pdo)
+* php-xml (or php5-xml)
+* php-mysql (or php5-mysql or even php-mysqlnd) // This is if you want to use a MySQL/MariaDB/Percona Database
+* php-pgsql (or php5-pgsql) // This is if you want to use a PostgreSQL Database
+
+And then you clone it with ```git clone https://github.com/dvwallin/antidote.git```
+
+```cd YOUR_ANTIDOTE_DIRECTORY``` and do ```chmod +x antidote && ./antidote --help```
+
+That's it.
+
 ## Syntax
               ___    __   __  ___  ___
      /\  |\ |  |  | |  \ /  \  |  |__
