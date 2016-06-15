@@ -35,14 +35,23 @@
 /*
  * Declare cli process title
 */
-    if ( !function_exists( 'cli_set_process_title' ) || !cli_set_process_title ( 'antidote' ) )
+    if ( PHP_OS != "Darwin" )
     {
-        $string_failure_message = 'Could not set a custom antidote process title';
-        if ( version_compare ( phpversion ( ) , '5.4' ) < 1 )
+        if ( !function_exists( 'cli_set_process_title' ) || !cli_set_process_title ( 'antidote' ) )
         {
-            $string_failure_message .= ' (need PHP v5.5+)';
+            $string_failure_message = 'Could not set a custom antidote process title';
+            if ( version_compare ( phpversion ( ) , '5.4' ) < 1 )
+            {
+                $string_failure_message .= ' (need PHP v5.5+)';
+            }
+            elog ( $string_failure_message );
         }
-        elog ( $string_failure_message );
+    } else {
+        if ( !function_exists( 'setproctitle' ) || !setproctitle( 'antidote' ) )
+        {
+            $string_failure_message = 'Could not set a custom antidote process title';
+            elog ( $string_failure_message );
+        }
     }
 
 /*
