@@ -485,7 +485,7 @@ class Antidote
                 case 'sqlite':
                     $this->execute_queries ( [ 'array_queries_to_execute' => array (
                         'CREATE TABLE IF NOT EXISTS __dote (
-                                    dote_id INTEGER PRIMARY KEY NOT NULL , 
+                                    dote_id INTEGER PRIMARY KEY NOT NULL ,
                                     branch TEXT NOT NULL ,
                                     rev_id INTEGER NOT NULL ); '
                 ) ] );
@@ -850,7 +850,19 @@ class Antidote
             foreach ( $array_all_revision_files as $key => $value )
             {
                 $exploded_value = explode ( '_', $value );
-                $array_returnation_content [ $exploded_value [ 1 ] ] [ ] = $exploded_value [ 0 ];
+				if ( count( $exploded_value ) > 2 )
+				{
+					$category_name_array = array();
+					for ( $i = 1; $i < count( $exploded_value ); $i++ )
+					{
+						array_push( $category_name_array, $exploded_value[ $i ] );
+					}
+					$category_name = implode( "_", $category_name_array );
+				} else
+				{
+					$category_name = $exploded_value [ 1 ];
+				}
+            	$array_returnation_content [ $category_name ] [ ] = $exploded_value [ 0 ];
             }
             ksort ( $array_returnation_content );
             return $array_returnation_content;
