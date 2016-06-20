@@ -214,6 +214,14 @@ class Antidote
                     '--goto',
                     'Which revision do you want to be the active one?'
                 ) ,
+				array (
+					'--goto_all',
+					'By setting --goto-all we bring all branches to latest revision'
+				),
+				array (
+					'--reset_all',
+					'By setting --reset-all we reset all revisions entirely'
+				),
                 array (
                     '--reset',
                     'Undo all revisions of a branch'
