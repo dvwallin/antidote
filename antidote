@@ -237,6 +237,29 @@
     }
 
 /*
+ * Function for running go_to on every branch.
+*/
+	function go_to_all( $array_arguments, $class_antidote )
+	{
+		global $class_layout;
+		$revisionfiles = $class_antidote->return_revision_files ( [ 'string_branch_name' => NULL ] );
+		foreach ( $revisionfiles as $branch => $revisions )
+		{
+			$temp_highest = $class_antidote->get_highest_revision_number ( [ 'string_branch_name' => $branch ] ) - 1;
+			$temp_array_arguments = $array_arguments;
+			$temp_array_arguments[ 'branch' ] = $branch;
+			$temp_array_arguments[ 'goto' ] = '!';
+			$msg = 'Going to ';
+			$msg .= $class_layout->return_formatted_content ( [ 'string_msg' => $temp_highest, 'string_colour' => '%U%G', 'int_mark' => 1 ] );
+			$msg .= ' on ';
+			$msg .= $class_layout->return_formatted_content ( [ 'string_msg' => $branch, 'string_colour' => '%U%G', 'int_mark' => 1 ] );
+			$class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+			go_to( $temp_array_arguments, $class_antidote );
+		}
+		return;
+	}
+
+/*
  * Function for jumping to a certain revision.
  * This is used both for going up and down
 */
@@ -328,6 +351,27 @@
             }
         }
     }
+
+
+/*
+* Function for running go_to on every branch.
+*/
+	function re_set_all( $array_arguments, $class_antidote )
+	{
+		global $class_layout;
+		$revisionfiles = $class_antidote->return_revision_files ( [ 'string_branch_name' => NULL ] );
+		foreach ( $revisionfiles as $branch => $revisions )
+		{
+			$temp_array_arguments = $array_arguments;
+			$temp_array_arguments[ 'branch' ] = $branch;
+			$temp_array_arguments[ 'reset' ] = NULL;
+			$msg = 'Resetting branch ';
+			$msg .= $class_layout->return_formatted_content ( [ 'string_msg' => $branch, 'string_colour' => '%U%G', 'int_mark' => 1 ] );
+			$class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+			re_set( $temp_array_arguments, $class_antidote );
+		}
+		return;
+	}
 
 /*
  * Reset function. Used to 'clear' the revision set
@@ -523,6 +567,8 @@
         }
         $func_map = array (
             'goto' => 'go_to',
+			'goto_all' => 'go_to_all',
+			'reset_all' => 're_set_all',
             'list' => 'li_st',
             'create' => 'create',
             'export' => 'export',
@@ -681,6 +727,15 @@ function li_st ( $array_arguments, $class_antidote )
     }
 
 /*
+ * Calling the goto-many-function
+*/
+    if ( array_key_exists ( 'goto_all', $array_arguments ) )
+    {
+        $msg = go_to_all ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
  * Calling the goto-function
 */
     if ( array_key_exists ( 'goto', $array_arguments ) )
@@ -704,6 +759,15 @@ function li_st ( $array_arguments, $class_antidote )
     if ( array_key_exists ( 'reset_locks', $array_arguments ) )
     {
         $msg = re_set_locks ( $array_arguments, $class_antidote );
+        $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
+    }
+
+/*
+ * Calling the reset function for all branches
+*/
+    if ( array_key_exists ( 'reset_all', $array_arguments ) )
+    {
+        $msg = re_set_all ( $array_arguments, $class_antidote );
         $class_antidote->show_msg ( [ 'string_msg' => $msg ] );
     }
 
